@@ -248,7 +248,7 @@ class Compare:
         self.unit = unit
         self._unit = 1e3 if unit == 'ms' else 1
 
-    def run(self, fargs, desc='', N=10000, max_time=1, check_output=False):
+    def run(self, fargs, desc='-', N=10000, max_time=1, check_output=False):
         """ Run the benchmark.
 
         Parameters
@@ -355,7 +355,6 @@ class Compare:
         ax.grid()
         self._set_figure(fig, ax, xlabel, ylabel)
 
-
     def bars(self, xlabel='Function arguments', log=False, relative=None):
         """ Displays results as bar chart.
 
@@ -410,3 +409,34 @@ class Compare:
 
         self.results = dict()
         self.description = []
+
+    def display(self):
+        """ Display results as table. """
+
+        print(self)
+
+    def __str__(self):
+
+        maxfc = max([len(key) for key in self.results] + [len(' Function ')])
+        maxdc = max([len(desc) for desc in self.description] + [len(' Description ')])
+
+        rows = '| {fc:<{maxfc}} | {dc:^{maxdc}} | {rt:^13} |\n'
+        line = f"+ {'':-<{maxfc}} + {'':-^{maxdc}} + {'':-^13} +\n"
+
+
+        table = line
+        table += rows.format(fc='Function', maxfc=maxfc,
+                             dc='Description', maxdc=maxdc,
+                             rt=f'Runtime [{self.unit}]')
+        table += line
+        for fc, times in self.results.items():
+            for rt, dc in zip(times, self.description):
+                table += rows.format(fc=fc, maxfc=maxfc,
+                                     dc=dc, maxdc=maxdc,
+                                     rt=round(rt, 5))
+        table += line
+
+        return table
+
+    def __repr__(self):
+        return self.__str__()

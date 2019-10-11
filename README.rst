@@ -10,6 +10,7 @@ Introducing bmtools
 Requirements
 ------------
 
+:python: >= 3.7
 :matplotlib: >= 3.0
 :numpy: >= 1.1
 
@@ -27,6 +28,43 @@ or install via Pypi
 .. code:: console
 
     $ pip install bmtools
+
+
+Compare execution times
+-----------------------
+
+Benchmarking functions execution can be done with `Compare` class as follows::
+
+   import numpy as np
+   from bmtools import Compare
+
+   def star_op(x):
+       return x**0.5
+
+   def pow_op(x):
+       return pow(x, 0.5)
+
+   def sqrt_op(x):
+       return np.sqrt(x)
+
+   if __name__ == "__main__":
+
+       # Single comparison
+       bm1 = Compare(pow_op, star_op, sqrt_op, unit='ms')
+       bm1.run(fargs=(np.random.rand(1000000), ), check_output=True)
+       bm1.display()
+
+       # Parametric comparison
+       bm2 = Compare(pow_op, star_op, sqrt_op, unit='ms')
+       for n in [2**n for n in range(16, 23)]:
+           bm2.run(fargs=(np.random.rand(n), ), desc=n, check_output=True)
+
+       bm2.bars()
+
+
+Add time probes to your code
+----------------------------
+
 
 
 .. |Pypi| image:: https://badge.fury.io/py/bmtools.svg

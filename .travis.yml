@@ -5,3 +5,4 @@ install:
   - pip3 install -q -e .
 script:
   - python3 tests/test_probes.py
+  - python3 tests/test_compare.py
