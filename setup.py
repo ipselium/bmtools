@@ -28,15 +28,14 @@ DOCSTRING
 """
 
 from setuptools import setup, find_packages
-import bmtools
 
 setup(
 
     name='bmtools',
     description="System informations",
     long_description=open('README.md').read(),
-    long_description_content_type='text/markdown',
-    version=bmtools.__version__,
+    long_description_content_type='text/x-rst',
+    version='0.1.0',
     license="GPL",
     url='http://github.com/ipselium/bmtools',
     author="Cyril Desjouy",
