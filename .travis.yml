@@ -1,0 +1,8 @@
+language: python
+python:
+  - "3.6"
+  - "3.7"
+install:
+  - pip3 install -q -e .
+script:
+  - python3 tests/test_probes.py

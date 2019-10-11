@@ -43,7 +43,7 @@ setup(
     author_email="cyril.desjouy@univ-lemans.fr",
     packages=find_packages(),
     include_package_data=True,
-    install_requires=[],
+    install_requires=['numpy', 'matplotlib'],
     classifiers=[
         "Development Status :: 4 - Beta",
         "Programming Language :: Python :: 3",
