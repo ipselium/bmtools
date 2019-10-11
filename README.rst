@@ -4,6 +4,9 @@ Introducing bmtools
 |Pypi| |Build| |Licence|
 
 
+.. image:: https://github.com/ipselium/bmtools/blob/master/docs/compare.png
+
+
 **bmtools** provides some tools dedicated to benchmarking.
 
 
