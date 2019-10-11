@@ -77,13 +77,17 @@ class Probe:
 
 
 class TimeProbes(metaclass=Singleton):
-    """ Measure time between probes.
+    """ Measure time between probes. Largely inspired by Bench-it.
 
     Parameters
     ----------
     unit: str
         Define whether results are displayed in seconds ('s') or milliseconds
         ('ms'). Default to 'ms'
+
+    Reference
+    ---------
+    https://pypi.org/project/bench-it/
     """
 
     def __init__(self, name='TimeProbes', unit='s'):
