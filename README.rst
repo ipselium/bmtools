@@ -36,7 +36,9 @@ or install via Pypi
 Compare execution times
 -----------------------
 
-Benchmarking functions execution can be done with `Compare` class as follows::
+Benchmarking functions execution can be done with `Compare` class as follows:
+
+.. code-block:: python
 
    import numpy as np
    from bmtools import Compare
