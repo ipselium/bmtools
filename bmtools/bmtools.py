@@ -248,7 +248,7 @@ class Compare:
         self.unit = unit
         self._unit = 1e3 if unit == 'ms' else 1
 
-    def run(self, fargs, desc='-', N=10000, max_time=1, check_output=False):
+    def run(self, fargs, desc='-', N=10000, max_time=1):
         """ Run the benchmark.
 
         Parameters
@@ -257,13 +257,10 @@ class Compare:
             Number of repetition of each func.
         max_time: float. Default to 1.
             Maximum runtime for each func.
-        check_output: bool. Default to False.
-            Check if all func return the same objects.
         """
 
         output = []
-        self.description.append(desc)
-
+        self.description.append(str(desc))
 
         for f in self.funcs:
 
@@ -275,48 +272,34 @@ class Compare:
                     break
 
             output.append(tmp)
-            self._update(f.__name__, self._get_time(ti)/i)
-
-        if check_output:
-            self.allequal(output)
+            self._update(f.__name__, self._get_time(ti)/i, self.is_equal(output)[-1])
 
     @staticmethod
-    def is_hashable(obj):
-        """ Check if obj is hashable. """
-        try:
-            hash(obj)
-            return True
-        except TypeError:
-            return False
-
-    @staticmethod
-    def allequal(seq):
+    def is_equal(seq):
         """ Check if all elements of seq are equal. """
+
         types = [type(obj) for obj in seq]
 
         if len(set(types)) > 1:
-            raise ValueError('All elements must be of the same type')
+            raise ValueError('To be compared, all elements must be of the same type')
 
-        if len(seq) == 0:
-            print('Compare: No results')
-        elif Compare.is_hashable(seq[0]):
-            print(f'Compare: {len(set(seq)) == 1} ({type(seq[0])})')
-        elif all([isinstance(o, np.ndarray) for o in seq]):
-            print(f'Compare: {all(np.all(x==seq[0]) for x in seq)} ({type(seq[0])})')
-        elif not Compare.is_hashable(seq[0]):
-            print(f'Compare: {all(x==seq[0] for x in seq)} ({type(seq[0])})')
-        else:
-            print('Type not supported')
+        if all([isinstance(o, np.ndarray) for o in seq]):
+            return [np.all(x == seq[0]) for x in seq]
+
+        return [x == seq[0] for x in seq]
 
     def _get_time(self, ti):
         return (time.perf_counter() - ti)*self._unit
 
-    def _update(self, name, time):
+    def _update(self, name, time, output):
 
         if self.results.get(name):
-            self.results[name].append(time)
+            self.results[name]['time'].append(time)
+            self.results[name]['output'].append(output)
         else:
-            self.results[name] = [time]
+            self.results[name] = dict()
+            self.results[name]['time'] = [time]
+            self.results[name]['output'] = [output]
 
     def _set_figure(self, fig, ax, xlabel, ylabel):
 
@@ -327,7 +310,7 @@ class Compare:
         fig.tight_layout()
         plt.show()
 
-    def plot(self, xlabel='Function arguments', log=False, relative=None):
+    def plot(self, xlabel='Function arguments', log=False, relative=False):
         """ Display results as plots.
 
         Parameters
@@ -336,26 +319,28 @@ class Compare:
             Define xlabel.
         log: bool. Default to False.
             Plot in log scale.
-        relative: str. Default to None.
-            If provided, displays relative results. The string must be the name of one of the function provided at instanciation.
+        relative: bool.
+            If True, displays relative results. Reference is the 1st function passed to instance.
         """
 
-        log = False if not isinstance(log, bool) else log
-        relative = relative if relative in self.fnames else None
         plot = plt.semilogy if log else plt.plot
         xlabel = str(xlabel)
         ylabel = r'$t_f / t_{ref}$' if relative else r'$t_f$ [{}]'.format(self.unit)
+        if relative:
+            reference = np.array(self.results[self.funcs[0].__name__]['time'])
+        else:
+            reference = 1
 
         fig, ax = plt.subplots(figsize=(9, 4))
         for f in self.funcs:
             plot(self.description,
-                 np.array(self.results[f.__name__])/np.array(self.results.get(relative, 1)),
+                 np.array(self.results[f.__name__])/reference,
                  marker='o', markersize=3, label=f.__name__)
 
         ax.grid()
         self._set_figure(fig, ax, xlabel, ylabel)
 
-    def bars(self, xlabel='Function arguments', log=False, relative=None):
+    def bars(self, xlabel='Function arguments', log=False, relative=False):
         """ Displays results as bar chart.
 
         Parameters
@@ -364,14 +349,16 @@ class Compare:
             Define xlabel.
         log: bool. Default to False.
             Plot in log scale.
-        relative: str. Default to None.
-            If provided, displays relative results. The string must be the name of one of the function provided at instanciation.
+        relative: bool.
+            If True, displays relative results. Reference is the 1st function passed to instance.
         """
 
-        log = False if not isinstance(log, bool) else log
-        relative = relative if relative in self.fnames else None
         xlabel = str(xlabel)
         ylabel = r'$t_f / t_{ref}$' if relative else r'$t_f$ [{}]'.format(self.unit)
+        if relative:
+            reference = np.array(self.results[self.funcs[0].__name__]['time'])
+        else:
+            reference = 1
 
         width = 0.80/len(self.funcs)
         locs = np.arange(len(self.description))  # the label locations
@@ -381,7 +368,7 @@ class Compare:
         fig, ax = plt.subplots(figsize=(9, 4))
         for i, f in enumerate(self.funcs):
             rects.append(ax.bar(locs + offset[i],
-                                np.array(self.results[f.__name__])/np.array(self.results.get(relative, 1)),
+                                np.array(self.results[f.__name__]['time'])/reference,
                                 width, label=f.__name__, log=log))
 
         ax.set_xticks(locs)
@@ -420,21 +407,23 @@ class Compare:
         maxfc = max([len(key) for key in self.results] + [len(' Function ')])
         maxdc = max([len(desc) for desc in self.description] + [len(' Description ')])
 
-        rows = '| {fc:<{maxfc}} | {dc:^{maxdc}} | {rt:^13} |\n'
-        line = f"+ {'':-<{maxfc}} + {'':-^{maxdc}} + {'':-^13} +\n"
+        rows = '| {fc:<{maxfc}} | {dc:^{maxdc}} | {rt:^13} | {out:^5} |\n'
+        line = f"+{'':-<{maxfc+2}}+{'':-^{maxdc+2}}+{'':-^15}+{'':-^7}+\n"
 
 
         table = line
         table += rows.format(fc='Function', maxfc=maxfc,
                              dc='Description', maxdc=maxdc,
-                             rt=f'Runtime [{self.unit}]')
+                             rt=f'Runtime [{self.unit}]',
+                             out='Equal')
         table += line
-        for fc, times in self.results.items():
-            for rt, dc in zip(times, self.description):
+        for idx, dc in enumerate(self.description):
+            for fc, results in self.results.items():
                 table += rows.format(fc=fc, maxfc=maxfc,
                                      dc=dc, maxdc=maxdc,
-                                     rt=round(rt, 5))
-        table += line
+                                     rt=round(results['time'][idx], 5),
+                                     out='True' if results['output'][idx] else 'False')
+            table += line
 
         return table
 

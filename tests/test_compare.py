@@ -30,25 +30,28 @@ import numpy as np
 from bmtools import Compare
 
 def star_op(x):
+    """ Double star operator. """
     return x**0.5
 
 def pow_op(x):
+    """ pow function. """
     return pow(x, 0.5)
 
 def sqrt_op(x):
+    """ numpy.sqrt function. """
     return np.sqrt(x)
 
 if __name__ == "__main__":
 
     # Single comparison
     bm1 = Compare(pow_op, star_op, sqrt_op, unit='ms')
-    bm1.run(fargs=(np.random.rand(1000000), ), check_output=True)
+    bm1.run(fargs=(np.random.rand(1000000), ))
     bm1.display()
 
     # Parametric comparison
     bm2 = Compare(pow_op, star_op, sqrt_op, unit='ms')
     for n in [2**n for n in range(16, 23)]:
-        bm2.run(fargs=(np.random.rand(n), ), desc=n, check_output=True)
+        bm2.run(fargs=(np.random.rand(n), ), desc=n)
 
+    bm2.display()
     bm2.bars()
-
