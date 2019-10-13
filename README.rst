@@ -56,14 +56,15 @@ Benchmarking functions execution can be done with `Compare` class as follows:
 
        # Single comparison
        bm1 = Compare(pow_op, star_op, sqrt_op, unit='ms')
-       bm1.run(fargs=(np.random.rand(1000000), ), check_output=True)
+       bm1.run(fargs=(np.random.rand(1000000), ))
        bm1.display()
 
        # Parametric comparison
        bm2 = Compare(pow_op, star_op, sqrt_op, unit='ms')
        for n in [2**n for n in range(16, 23)]:
-           bm2.run(fargs=(np.random.rand(n), ), desc=n, check_output=True)
+           bm2.run(fargs=(np.random.rand(n), ), desc=n)
 
+       bm2.display()
        bm2.bars()
 
 
