@@ -28,4 +28,4 @@ DOCSTRING
 
 from .bmtools import Compare, TimeProbes, kb_to_mb
 
-__version__ = "0.1.2"
+__version__ = "0.1.3"
