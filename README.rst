@@ -128,6 +128,44 @@ The **`mtimer`** decorator can be used to time instance methods as follows:
 Add time probes to your code
 ----------------------------
 
+The **`TimeProbes`** class provide a way to time blocks of code. Note that this
+class is largely inspired by Bench-it.
+
+.. code-block:: python
+
+   bm = TimeProbes()        # Create our probes
+   time.sleep(0.1)
+   bm('example')            # Create a probe named 'example'
+   time.sleep(0.2)
+   bm()                     # Create a probe without name
+
+   with bm as my_context:  # Use probe as context manager.
+       time.sleep(0.8)      # my_context will be the name of the probe
+
+   bm.display()            # Display times measured at probe locations
+
+
+.. code:: console
+
+
+   +-------------------------------------------------------------------------------------------------+
+   |                                           TimeProbes                                            |
+   + ---------- + ------------------------ + ---------- + ------------- + ------------- + ---------- +
+   | Makers     |        File:line         |  Function  | Avg time [s]  |  Runtime [s]  |  Percent   |
+   + ---------- + ------------------------ + ---------- + ------------- + ------------- + ---------- +
+   | example    | test_probes_simple.py:33 |  <module>  |    0.1436     |    0.1436     |    12.5    |
+   | Probe 1    | test_probes_simple.py:35 |  <module>  |    0.20101    |    0.20101    |    17.5    |
+   | my_context | test_probes_simple.py:37 |  <module>  |    0.80113    |    0.80113    |    69.9    |
+   + ---------- + ------------------------ + ---------- + ------------- + ------------- + ---------- +
+
+
+References
+----------
+
+The **`TimeProbes`** class is largely inpired by Bench-it:
+
+https://pypi.org/project/bench-it/
+
 
 
 .. |Pypi| image:: https://badge.fury.io/py/bmtools.svg

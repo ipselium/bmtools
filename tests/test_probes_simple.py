@@ -18,14 +18,23 @@
 # You should have received a copy of the GNU General Public License
 # along with bmtools. If not, see <http://www.gnu.org/licenses/>.
 #
-#
-# Creation Date : 2019-10-10 - 12:09:12
+# Creation Date : 2019-10-14 - 09:50:57
 """
 -----------
-DOCSTRING
-
+TimeProbes simple example
+-----------
 """
 
-from .bmtools import Compare, TimeProbes, mtimer, format_mtimer, kb_to_mb
+import time
+from bmtools import TimeProbes
 
-__version__ = "0.1.4"
+bm = TimeProbes()        # Create our probes
+time.sleep(0.1)
+bm('example')            # Create a probe named 'example'
+time.sleep(0.2)
+bm()                     # Create a probe without name
+
+with bm as my_context:  # Use probe as context manager.
+    time.sleep(0.8)     # my_context will be the name of the probe
+
+bm.display()            # Display times measured at probe locations

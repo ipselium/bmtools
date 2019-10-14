@@ -26,7 +26,7 @@ mtimer example
 """
 
 import time
-from bmtools import mtimer
+from bmtools import mtimer, format_mtimer
 
 
 class MtimeExample:
@@ -56,6 +56,7 @@ if __name__ == "__main__":
 
     for _ in range(2):
         mt.method1('with argument')
-        mt.method2('without argument')
 
-    print(mt.__bm__)
+    mt.method2('without argument')
+
+    format_mtimer(mt)

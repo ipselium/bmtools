@@ -21,8 +21,7 @@
 # Creation Date : 2019-10-10 - 12:07:48
 """
 -----------
-DOCSTRING
-
+Benchmarking tools
 -----------
 """
 
@@ -30,6 +29,7 @@ import os
 import time
 import inspect
 import functools
+import itertools
 import dataclasses
 import numpy as np
 import matplotlib.pyplot as plt
@@ -55,8 +55,7 @@ class Probe:
     """ Create a time probe. """
 
     name: str
-    etime: list
-    dtime: list
+    time: list
     line: int
     file: str
     function: str
@@ -64,12 +63,12 @@ class Probe:
     @property
     def mtime(self):
         """ Return mean time. """
-        return sum(self.dtime)/len(self.dtime)
+        return sum(self.time)/len(self.time)
 
     @property
     def ttime(self):
         """ Return total time. """
-        return sum(self.dtime)
+        return sum(self.time)
 
     @property
     def location(self):
@@ -96,16 +95,22 @@ class TimeProbes(metaclass=Singleton):
         self.name = name
         self.unit = unit
         self._unit = 1e3 if unit == 'ms' else 1
+        self.reset()
+
+    def reset(self):
+        """ Reset results, but not timer ! """
+
         self._probes = dict()
         self._pidx = 0
-        self._itime = time.perf_counter()
-        self._ltime = 0
         self._info = None
 
         self._cminfo = None
         self._cmtime = None
         self._cmname = None
         self._cmidx = 0
+
+        self._itime = time.perf_counter()
+        self._ltime = 0
 
     @property
     def _etime(self):
@@ -118,9 +123,17 @@ class TimeProbes(metaclass=Singleton):
         return os.path.basename(fn)
 
     @property
+    def _function(self):
+        return self._info.function if '<module>' not in self._info.function else '--'
+
+    @property
     def _cmfilename(self):
         fn = self._cminfo.filename if 'ipython' not in self._cminfo.filename else 'IPython'
         return os.path.basename(fn)
+
+    @property
+    def _cmfunction(self):
+        return self._cminfo.function if '<module>' not in self._cminfo.function else '--'
 
     @property
     def _probe_no(self):
@@ -142,24 +155,21 @@ class TimeProbes(metaclass=Singleton):
     def __call__(self, probe_name=None):
 
         self._info = inspect.getframeinfo(inspect.currentframe().f_back)
-        etime = self._etime
         name = self._ispresent(self._info.lineno)
         if name:
-            self._probes[name].etime.append(etime)
-            self._probes[name].dtime.append(abs(self._ltime - etime))
+            self._probes[name].time.append(self._etime - self._ltime)
 
         else:
             if probe_name is None:
                 probe_name = f'Probe {self._probe_no}'
 
             self._probes[probe_name] = Probe(name=probe_name,
-                                             etime=[etime],
-                                             dtime=[abs(self._ltime - etime)],
+                                             time=[self._etime - self._ltime],
                                              file=self._filename,
                                              line=self._info.lineno,
-                                             function=self._info.function)
+                                             function=self._function)
 
-        self._ltime = etime
+        self._ltime = self._etime
 
     def __enter__(self):
 
@@ -167,29 +177,22 @@ class TimeProbes(metaclass=Singleton):
         self._cmtime = self._etime
         ctxt = self._cminfo.code_context[0]
         if 'as' in ctxt:
-            self._cmname = ctxt.split('as')[-1].split(':')[0].strip()
+            self._cmname = ctxt.split('#')[0].split('as')[-1].split(':')[0].strip()
         else:
             self._cmname = "Context {self._context_no}"
 
     def __exit__(self, *args):
 
-        etime = self._etime
-        name = self._ispresent(self._cminfo.lineno)
-        if name:
-            self._probes[name].etime.append(etime)
-            self._probes[name].dtime.append(abs(self._cmtime - etime))
-
         self._probes[self._cmname] = Probe(name=self._cmname,
-                                           etime=[etime],
-                                           dtime=[abs(self._cmtime -  etime)],
+                                           time=[self._etime - self._cmtime],
                                            file=self._cmfilename,
                                            line=self._cminfo.lineno,
-                                           function=self._cminfo.function)
-        self._ltime = etime
+                                           function=self._cmfunction)
+        self._ltime = self._etime
 
     def display(self):
         """ Display results in a formated table. """
-        print(self.__str__())
+        print(self)
 
     def __repr__(self):
         return self.__str__()
@@ -472,3 +475,58 @@ def mtimer(func=None, *, name=None):
         return decorator(func)
 
     return decorator
+
+
+def format_mtimer(instance, table=True, unit='s', precision=5, display=True):
+    """ Create table from mtimer results.
+
+    Parameters
+    ----------
+    instance:
+        Class instance from which to create table. Must have __bm__ attribute.
+    table: bool.
+        If True, create table, else basically formats the results. Default to True.
+    unit: str
+        Define whether results are displayed in seconds ('s') or milliseconds
+        ('ms'). Default to 'ms'.
+    precision: int
+        Precision of the results. Default to 5
+    display: bool
+        Define whether or not table is displayed
+    """
+
+    if not hasattr(instance, '__bm__'):
+        raise ValueError('Instance does not have __mb__ attribute')
+
+    _unit = 1e3 if unit == 'ms' else 1
+    kmax = max([len(k) for k in instance.__bm__])
+    pmax = len(str(int(max(itertools.chain.from_iterable(instance.__bm__.values()))*_unit)))+1
+    tmax = max(len(f' Avg. time ({unit})'), pmax + precision) if table else pmax + precision
+
+    output = ''
+    if table:
+        tmp = '| {key:<{kmax}} | {calls:^5} | {atime:^{tmax}} | {rtime:^{tmax}} |\n'
+        line = f"+{'':-^{kmax+2}}+{'':-^7}+{'':-^{tmax+2}}+{'':-^{tmax+2}}+\n"
+        output += line
+        output += tmp.format(key='Method', calls='Calls',
+                             atime=f'Avg. time ({unit})',
+                             rtime=f'Runtime ({unit})',
+                             kmax=kmax, tmax=tmax)
+        output += line
+    else:
+        tmp = "\t+ {key:<{kmax}} : {rtime:>{tmax}} {unit}. ({calls} calls of {atime} {unit}.)\n"
+
+    for key, values in instance.__bm__.items():
+        output += tmp.format(key=key, calls=len(values),
+                             atime=round(sum(values)/len(values)*_unit, precision),
+                             rtime=round(sum(values)*_unit, precision),
+                             tmax=tmax, kmax=kmax, unit=unit)
+
+    if table:
+        output += line
+
+    if display:
+        print(output)
+        return
+
+    return output
