@@ -18,39 +18,44 @@
 # You should have received a copy of the GNU General Public License
 # along with bmtools. If not, see <http://www.gnu.org/licenses/>.
 #
-# Creation Date : 2019-10-11 - 17:01:15
+# Creation Date : 2019-10-14 - 09:31:14
 """
 -----------
-Compare examples
+mtimer example
 -----------
 """
 
-import numpy as np
-from bmtools import Compare
+import time
+from bmtools import mtimer
 
-def star_op(x):
-    """ Double star operator. """
-    return x**0.5
 
-def pow_op(x):
-    """ pow function. """
-    return pow(x, 0.5)
+class MtimeExample:
+    """ mtimer examples. """
 
-def sqrt_op(x):
-    """ numpy.sqrt function. """
-    return np.sqrt(x)
+    def __init__(self):
+        self.string = 'mtimer example'
+
+    @mtimer(name='with arg')
+    def method1(self, string):
+        """ Example with argument. """
+        time.sleep(0.2)
+        print(self.string, string)
+        time.sleep(0.2)
+
+    @mtimer
+    def method2(self, string):
+        """ Example without argument. """
+        time.sleep(0.1)
+        print(self.string, string)
+        time.sleep(0.1)
+
 
 if __name__ == "__main__":
 
-    # Single comparison
-    bm1 = Compare(pow_op, star_op, sqrt_op, unit='ms')
-    bm1.run(fargs=(np.random.rand(1000000), ))
-    bm1.display()
+    mt = MtimeExample()
 
-    # Parametric comparison
-    bm2 = Compare(pow_op, star_op, sqrt_op, unit='ms')
-    for n in [2**n for n in range(16, 23)]:
-        bm2.run(fargs=(np.random.rand(n), ), desc=n)
+    for _ in range(2):
+        mt.method1('with argument')
+        mt.method2('without argument')
 
-    bm2.display()
-    bm2.bars()
+    print(mt.__bm__)

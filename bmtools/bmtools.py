@@ -29,6 +29,7 @@ DOCSTRING
 import os
 import time
 import inspect
+import functools
 import dataclasses
 import numpy as np
 import matplotlib.pyplot as plt
@@ -429,3 +430,45 @@ class Compare:
 
     def __repr__(self):
         return self.__str__()
+
+
+def mtimer(func=None, *, name=None):
+    """ Measure execution time of instance methods.
+
+    Create a __bm__ instance attribute that refers to a dictionary containing
+    execution times of instance methods.
+
+    Note that static or class method cannot be timed with this decorator.
+
+    Parameters
+    ----------
+    name: str
+        If provided, name is the key of the __bm__ dictionary where times are saved.
+
+    Example
+    -------
+        @mtimer                      # Can be @mtimer(name='key')
+        def instance_method(self):
+            pass
+    """
+    def decorator(func):
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):
+            nonlocal name
+            if not name:
+                name = func.__name__
+            if not hasattr(args[0], '__bm__'):
+                args[0].__bm__ = dict()
+            start = time.perf_counter()
+            output = func(*args, **kwargs)
+            if args[0].__bm__.get(name):
+                args[0].__bm__[name].append(time.perf_counter() - start)
+            else:
+                args[0].__bm__[name] = [time.perf_counter() - start]
+            return output
+        return wrapper
+
+    if func:
+        return decorator(func)
+
+    return decorator

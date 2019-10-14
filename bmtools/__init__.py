@@ -26,6 +26,6 @@ DOCSTRING
 
 """
 
-from .bmtools import Compare, TimeProbes, kb_to_mb
+from .bmtools import Compare, TimeProbes, mtimer, kb_to_mb
 
 __version__ = "0.1.3"
