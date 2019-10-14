@@ -338,7 +338,7 @@ class Compare:
         fig, ax = plt.subplots(figsize=(9, 4))
         for f in self.funcs:
             plot(self.description,
-                 np.array(self.results[f.__name__])/reference,
+                 np.array(self.results[f.__name__]['time'])/reference,
                  marker='o', markersize=3, label=f.__name__)
 
         ax.grid()
