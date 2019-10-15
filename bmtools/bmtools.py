@@ -30,50 +30,11 @@ import time
 import inspect
 import functools
 import itertools
-import dataclasses
 import numpy as np
 import matplotlib.pyplot as plt
+from bmtools.objects import Timing, Probe, GarbageCollector, Singleton
 
-
-def kb_to_mb(kb):
-    return f'{kb/2**20:.2f} Mo'
-
-
-class Singleton(type):
-    """ Singleton metaclass. """
-
-    _instances = {}
-
-    def __call__(cls, name="TimeProbes", **kwargs):
-        if name not in cls._instances:
-            cls._instances[name] = super(Singleton, cls).__call__(name, **kwargs)
-        return cls._instances[name]
-
-
-@dataclasses.dataclass
-class Probe:
-    """ Create a time probe. """
-
-    name: str
-    time: list
-    line: int
-    file: str
-    function: str
-
-    @property
-    def mtime(self):
-        """ Return mean time. """
-        return sum(self.time)/len(self.time)
-
-    @property
-    def ttime(self):
-        """ Return total time. """
-        return sum(self.time)
-
-    @property
-    def location(self):
-        """ Return location of timer. """
-        return f'{self.file}:{self.line}'
+units = {"nsec": 1e-9, "usec": 1e-6, "msec": 1e-3, "sec": 1.0}
 
 
 class TimeProbes(metaclass=Singleton):
@@ -81,20 +42,18 @@ class TimeProbes(metaclass=Singleton):
 
     Parameters
     ----------
-    unit: str
-        Define whether results are displayed in seconds ('s') or milliseconds
-        ('ms'). Default to 'ms'
+    unit: str = 'sec', 'msec', 'usec', 'nsec'
+        Time measurement unit. Millisecond by default.
 
     Reference
     ---------
     https://pypi.org/project/bench-it/
     """
 
-    def __init__(self, name='TimeProbes', unit='s'):
+    def __init__(self, name='TimeProbes', unit='msec'):
 
         self.name = name
-        self.unit = unit
-        self._unit = 1e3 if unit == 'ms' else 1
+        self.unit = unit if unit in units.keys() else 'msec'
         self.reset()
 
     def reset(self):
@@ -113,9 +72,14 @@ class TimeProbes(metaclass=Singleton):
         self._ltime = 0
 
     @property
+    def digits(self):
+        """ Returns number of digits to display. """
+        return 2 if self.unit == 'nsec' else 5
+
+    @property
     def _etime(self):
         """ Return current time. """
-        return (time.perf_counter() - self._itime)*self._unit
+        return (time.perf_counter() - self._itime)/units[self.unit]
 
     @property
     def _filename(self):
@@ -205,10 +169,10 @@ class TimeProbes(metaclass=Singleton):
         maxfc = max([len(p.function) for p in self._probes.values()] + [len(' Function ')])
 
         rows = '| {mk:<{maxmk}} | {lc:^{maxlc}} | {fc:^{maxfc}} |'
-        rows += ' {at:^13} | {rt:^13} | {pc:^10} |\n'
+        rows += ' {at:^16} | {rt:^16} | {pc:^10} |\n'
 
         line = f"+ {'':-<{maxmk}} + {'':-^{maxlc}} + {'':-^{maxfc}} +"
-        line += f" {'':-^13} + {'':-^13} + {'':-^10} +\n"
+        line += f" {'':-^16} + {'':-^16} + {'':-^10} +\n"
 
         table = '+' + (len(line)-3)*'-' + '+\n'
         table += f"|{self.name:^{len(line)-3}}|\n"
@@ -224,8 +188,8 @@ class TimeProbes(metaclass=Singleton):
             table += rows.format(mk=p.name, maxmk=maxmk,
                                  lc=p.location, maxlc=maxlc,
                                  fc=p.function, maxfc=maxfc,
-                                 at=round(p.mtime, 5),
-                                 rt=round(p.ttime, 5),
+                                 at=round(p.mtime, self.digits),
+                                 rt=round(p.ttime, self.digits),
                                  pc=round(p.ttime/ttime*100, 1))
         table += line
 
@@ -239,44 +203,81 @@ class Compare:
     ----------
     *funcs: functions
         Functions to compare.
-    unit: str = 's' or 'ms'
-        Time measurement unit. Can be second (s) or millisecond (ms). Millisecond by default.
+    unit: str = 'sec', 'msec', 'usec', 'nsec'
+        Time measurement unit. Millisecond by default.
     """
 
-    def __init__(self, *funcs, unit='s'):
+    def __init__(self, *funcs, unit='msec'):
 
-        self.funcs = funcs
+        self.funcs = tuple(set(funcs))
         self.fnames = [f.__name__ for f in self.funcs]
         self.results = dict()
+        self.unit = unit if unit in units.keys() else 'msec'
+        self.gc = GarbageCollector()
+        self.order = 'by_description'
         self.description = []
-        self.unit = unit
-        self._unit = 1e3 if unit == 'ms' else 1
 
-    def run(self, fargs, desc='-', N=10000, max_time=1):
+    def run(self, fargs=(), desc='--', N=None, runs=7):
         """ Run the benchmark.
 
         Parameters
         ----------
-        N: int. Default to 10000.
-            Number of repetition of each func.
-        max_time: float. Default to 1.
-            Maximum runtime for each func.
+        fargs: tuple.
+            Arguments of the function. Default to ().
+        desc: str:
+            Description of the run.
+        N: int.
+            Execute N times the functions. Default to None.
+        runs: int.
+            Number of repeat. Default to 7. Must be at least 5.
         """
 
-        output = []
+        runs = 5 if runs < 5 else runs
+        outputs = []
+        times = []
         self.description.append(str(desc))
 
-        for f in self.funcs:
+        for func in self.funcs:
 
-            ti = time.perf_counter()
+            with self.gc:
+                tmp = func(*fargs)
+            outputs.append(tmp)
 
-            for i in range(1, N+1):
-                tmp = f(*fargs)
-                if self._get_time(ti) > max_time*self._unit:
-                    break
+            if N is None:
+                for N in [10**i for i in range(0, 10)]:
+                    runtime = self.timeit(func=func, fargs=fargs, N=N)
+                    if runtime >= 0.2:
+                        times.append(runtime/N)
+                        break
 
-            output.append(tmp)
-            self._update(f.__name__, self._get_time(ti)/i, self.is_equal(output)[-1])
+            # Correction : empty loop
+            te = self._passit(N=N)/N
+
+            for _ in itertools.repeat(None, runs-1):
+                with self.gc:
+                    times.append(self.timeit(func=func, fargs=fargs, N=N)/N - te)
+
+            self._update(func.__name__, times, self.is_equal(outputs)[-1], desc)
+
+    @staticmethod
+    def timeit(func, fargs=(), N=1_000_000):
+        """ Timing method. """
+
+        ti = time.perf_counter()
+        for _ in itertools.repeat(None, N):
+            func(*fargs)
+        te = time.perf_counter()
+        return te - ti
+
+    @staticmethod
+    def _passit(N=1_000_000):
+
+        ti = time.perf_counter()
+        for _ in itertools.repeat(None, N):
+            pass
+        te = time.perf_counter()
+        return te - ti
+
 
     @staticmethod
     def is_equal(seq):
@@ -292,18 +293,38 @@ class Compare:
 
         return [x == seq[0] for x in seq]
 
-    def _get_time(self, ti):
-        return (time.perf_counter() - ti)*self._unit
+    def reset(self):
+        """ Reset all results. """
+        self.results = dict()
+        self.description = []
 
-    def _update(self, name, time, output):
+    def display(self, order='by_description'):
+        """ Display results as table.
+
+        Parameter
+        ---------
+        order: str.
+            Order by function or description. Can be 'by_description' or 'by_function'.
+            Default to 'by_description'.
+        """
+        self.order = order
+        print(self)
+
+    def _update(self, name, times, output, desc):
 
         if self.results.get(name):
-            self.results[name]['time'].append(time)
-            self.results[name]['output'].append(output)
+            self.results[name].time.append(sum(times)/len(times))
+            self.results[name].best.append(min(times))
+            self.results[name].worst.append(max(times))
+            self.results[name].std.append(np.std(times))
+            self.results[name].output.append(output)
+            self.results[name].desc.append(desc)
+
         else:
-            self.results[name] = dict()
-            self.results[name]['time'] = [time]
-            self.results[name]['output'] = [output]
+            self.results[name] = Timing(name=name,
+                                        time=[sum(times)/len(times)],
+                                        best=[min(times)], worst=[max(times)], std=[np.std(times)],
+                                        output=[output], desc=[str(desc)])
 
     def _set_figure(self, fig, ax, xlabel, ylabel):
 
@@ -331,14 +352,14 @@ class Compare:
         xlabel = str(xlabel)
         ylabel = r'$t_f / t_{ref}$' if relative else r'$t_f$ [{}]'.format(self.unit)
         if relative:
-            reference = np.array(self.results[self.funcs[0].__name__]['time'])
+            reference = np.array(self.results[self.funcs[0].__name__].time)
         else:
-            reference = 1
+            reference = units[self.unit]
 
         fig, ax = plt.subplots(figsize=(9, 4))
         for f in self.funcs:
-            plot(self.description,
-                 np.array(self.results[f.__name__]['time'])/reference,
+            plot(self.results[f.__name__].desc,
+                 np.array(self.results[f.__name__].time)/reference,
                  marker='o', markersize=3, label=f.__name__)
 
         ax.grid()
@@ -360,9 +381,9 @@ class Compare:
         xlabel = str(xlabel)
         ylabel = r'$t_f / t_{ref}$' if relative else r'$t_f$ [{}]'.format(self.unit)
         if relative:
-            reference = np.array(self.results[self.funcs[0].__name__]['time'])
+            reference = np.array(self.results[self.funcs[0].__name__].time)
         else:
-            reference = 1
+            reference = units[self.unit]
 
         width = 0.80/len(self.funcs)
         locs = np.arange(len(self.description))  # the label locations
@@ -372,7 +393,7 @@ class Compare:
         fig, ax = plt.subplots(figsize=(9, 4))
         for i, f in enumerate(self.funcs):
             rects.append(ax.bar(locs + offset[i],
-                                np.array(self.results[f.__name__]['time'])/reference,
+                                np.array(self.results[f.__name__].time)/reference,
                                 width, label=f.__name__, log=log))
 
         ax.set_xticks(locs)
@@ -395,41 +416,48 @@ class Compare:
                         textcoords="offset points",
                         ha='center', va='bottom', fontsize=8)
 
-    def reset(self):
-        """ Reset all results. """
-
-        self.results = dict()
-        self.description = []
-
-    def display(self):
-        """ Display results as table. """
-
-        print(self)
+    @property
+    def digits(self):
+        """ Returns number of digits to display. """
+        return 2 if self.unit == 'nsec' else 5
 
     def __str__(self):
 
+        nd = len(self.description)
+        nf = len(self.funcs)
         maxfc = max([len(key) for key in self.results] + [len(' Function ')])
         maxdc = max([len(desc) for desc in self.description] + [len(' Description ')])
 
-        rows = '| {fc:<{maxfc}} | {dc:^{maxdc}} | {rt:^13} | {out:^5} |\n'
-        line = f"+{'':-<{maxfc+2}}+{'':-^{maxdc+2}}+{'':-^15}+{'':-^7}+\n"
+        rows = '| {fc:<{maxfc}} | {dc:^{maxdc}} | {rt:^14} | {std:^14} | {out:^5} |\n'
+        line = f"+{'':-<{maxfc+2}}+{'':-^{maxdc+2}}+{'':-^16}+{'':-^16}+{'':-^7}+\n"
 
 
         table = line
         table += rows.format(fc='Function', maxfc=maxfc,
                              dc='Description', maxdc=maxdc,
                              rt=f'Runtime [{self.unit}]',
-                             out='Equal')
+                             std=f'Std [{self.unit}]', out='Equal')
         table += line
-        for idx, dc in enumerate(self.description):
-            for fc, results in self.results.items():
-                table += rows.format(fc=fc, maxfc=maxfc,
-                                     dc=dc, maxdc=maxdc,
-                                     rt=round(results['time'][idx], 5),
-                                     out='True' if results['output'][idx] else 'False')
-            table += line
 
-        return table
+        results = []
+
+        for idx in range(nd):
+            for fc, tg in self.results.items():
+                results.append(rows.format(fc=fc, maxfc=maxfc,
+                                           dc=tg.desc[idx], maxdc=maxdc,
+                                           rt=round(tg.time[idx]/units[self.unit], self.digits),
+                                           std=round(tg.std[idx]/units[self.unit], self.digits),
+                                           out='True' if tg.output[idx] else False))
+
+        if self.order == 'by_function':
+            results = list(itertools.chain.from_iterable([results[i::nf] for i in range(nf)]))
+            results = itertools.chain(*zip(*[results[i::nd] for i in range(nd)], [line]*nf))
+        elif self.order == 'by_description':
+            results = itertools.chain(*zip(*[results[i::nf] for i in range(nf)], [line]*nd))
+        else:
+            raise ValueError("order must be 'by_function' or 'by_description'")
+
+        return table + ''.join(results)
 
     def __repr__(self):
         return self.__str__()
@@ -477,7 +505,7 @@ def mtimer(func=None, *, name=None):
     return decorator
 
 
-def format_mtimer(instance, table=True, unit='s', precision=5, display=True):
+def format_mtimer(instance, table=True, unit='msec', precision=5, display=True):
     """ Create table from mtimer results.
 
     Parameters
@@ -486,9 +514,8 @@ def format_mtimer(instance, table=True, unit='s', precision=5, display=True):
         Class instance from which to create table. Must have __bm__ attribute.
     table: bool.
         If True, create table, else basically formats the results. Default to True.
-    unit: str
-        Define whether results are displayed in seconds ('s') or milliseconds
-        ('ms'). Default to 'ms'.
+    unit: str = 'sec', 'msec', 'usec', 'nsec'
+        Time measurement unit. Millisecond by default.
     precision: int
         Precision of the results. Default to 5
     display: bool
@@ -498,7 +525,7 @@ def format_mtimer(instance, table=True, unit='s', precision=5, display=True):
     if not hasattr(instance, '__bm__'):
         raise ValueError('Instance does not have __mb__ attribute')
 
-    _unit = 1e3 if unit == 'ms' else 1
+    _unit = units[unit]
     kmax = max([len(k) for k in instance.__bm__])
     pmax = len(str(int(max(itertools.chain.from_iterable(instance.__bm__.values()))*_unit)))+1
     tmax = max(len(f' Avg. time ({unit})'), pmax + precision) if table else pmax + precision

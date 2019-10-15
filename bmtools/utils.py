@@ -18,14 +18,20 @@
 # You should have received a copy of the GNU General Public License
 # along with bmtools. If not, see <http://www.gnu.org/licenses/>.
 #
-#
-# Creation Date : 2019-10-10 - 12:09:12
+# Creation Date : 2019-10-15 - 16:15:02
 """
 -----------
-DOCSTRING
-
+Utils for bmtools
+-----------
 """
 
-from .bmtools import Compare, TimeProbes, mtimer, format_mtimer
+import math
 
-__version__ = "0.1.6"
+def kb_to_mb(kb):
+    """ Convert kilobytes to megabytes. """
+    return f'{kb/2**20:.2f} Mo'
+
+
+def exponent(decimal):
+    """ Return exponent of decimal number. """
+    return int(math.log10(decimal))
