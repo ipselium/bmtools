@@ -35,7 +35,7 @@ setup(
     description="System informations",
     long_description=open('README.rst').read(),
     long_description_content_type='text/x-rst',
-    version='0.1.6',
+    version='0.2.0',
     license="GPL",
     url='http://github.com/ipselium/bmtools',
     author="Cyril Desjouy",

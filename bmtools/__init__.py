@@ -28,4 +28,4 @@ DOCSTRING
 
 from .bmtools import Compare, TimeProbes, mtimer, format_mtimer
 
-__version__ = "0.1.6"
+__version__ = "0.2.0"
