@@ -43,14 +43,14 @@ def sqrt_op(x):
 if __name__ == "__main__":
 
     # Single comparison
-    bm1 = Compare(pow_op, star_op, sqrt_op, unit='ms')
-    bm1.run(fargs=(np.random.rand(1000000), ))
+    bm1 = Compare(pow_op, star_op, sqrt_op)
+    bm1.run_single(fargs=(np.random.rand(1000000), ))
     bm1.display()
 
     # Parametric comparison
-    bm2 = Compare(pow_op, star_op, sqrt_op, unit='ms')
+    bm2 = Compare(pow_op, star_op, sqrt_op)
     for n in [2**n for n in range(16, 23)]:
-        bm2.run(fargs=(np.random.rand(n), ), desc=n)
+        bm2.run_single(fargs=(np.random.rand(n), ), desc=n)
 
     bm2.display()
     bm2.bars()

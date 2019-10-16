@@ -22,10 +22,11 @@
 # Creation Date : 2019-10-10 - 12:09:12
 """
 -----------
-DOCSTRING
-
+bmtools
+-----------
 """
 
 from .bmtools import Compare, TimeProbes, mtimer, format_mtimer
 
+__all__ = ["Compare", "TimeProbes", "mtimer", "format_mtimer"]
 __version__ = "0.2.0"

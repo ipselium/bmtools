@@ -19,6 +19,11 @@
 # along with bmtools. If not, see <http://www.gnu.org/licenses/>.
 #
 # Creation Date : 2019-10-10 - 12:07:48
+# pylint: disable=dangerous-default-value
+# pylint: disable=redefined-argument-from-local
+# pylint: disable=line-too-long
+# pylint: disable=attribute-defined-outside-init
+# pylint: disable=unused-argument
 """
 -----------
 Benchmarking tools
@@ -33,6 +38,10 @@ import itertools
 import numpy as np
 import matplotlib.pyplot as plt
 from bmtools.objects import Timing, Probe, GarbageCollector, Singleton
+
+
+__all__ = ["Compare", "TimeProbes", "mtimer", "format_mtimer"]
+
 
 units = {"nsec": 1e-9, "usec": 1e-6, "msec": 1e-3, "sec": 1.0}
 
@@ -197,92 +206,241 @@ class TimeProbes(metaclass=Singleton):
 
 
 class Compare:
-    """ Compares the time it takes to execute functions
+    """
+    Compares the time it takes to execute functions.
 
     Parameters
     ----------
-    *funcs: functions
-        Functions to compare.
-    unit: str = 'sec', 'msec', 'usec', 'nsec'
-        Time measurement unit. Millisecond by default.
+    *funcs : Sequence of functions
+        Sequence of functions to compare.
+    unit : {'sec', 'msec', 'usec', 'nsec'}, optional
+        Time measurement unit. 'msec' by default.
     """
 
     def __init__(self, *funcs, unit='msec'):
+        """Constructor. See class doc string."""
 
-        self.funcs = tuple(set(funcs))
-        self.fnames = [f.__name__ for f in self.funcs]
+        self.funcs = list(dict.fromkeys(funcs))
         self.results = dict()
         self.unit = unit if unit in units.keys() else 'msec'
-        self.gc = GarbageCollector()
-        self.order = 'by_description'
+        self.sort = 'by_description'
         self.description = []
+        self._gc = GarbageCollector()
+        self._outputs = []
+        self._rcounter = 0
 
-    def run(self, fargs=(), desc='--', N=None, runs=7):
-        """ Run the benchmark.
+    @staticmethod
+    def parameters(*fargs, **fkwargs):
+        """
+        Decorator giving a function the __fargs__ and __fkwargs__ attributes.
+
+        This decorator prepares functions for future execution with
+        `parametric` method passing fargs/fkwargs to the decorated function
+
+        Example
+        -------
+
+        @Compare.parameters((1,), (2,), b=(3, 4))
+        def multiplication(a, b=1):
+            return a*b
+
+        This decorator prepares function to be executed with the following
+        combination of args/kwargs:
+            - args=(1, ) and kwargs={'b':3}
+            - args=(1, ) and kwargs={'b':4}
+            - args=(2, ) and kwargs={'b':3}
+            - args=(2, ) and kwargs={'b':4}
+        """
+        def decorator(func):
+
+            func.__fargs__ = fargs
+            func.__fkwargs__ = fkwargs
+
+            @functools.wraps(func)
+            def wrapper(*args, **kwargs):
+                return func(*args, **kwargs)
+
+            return wrapper
+
+        return decorator
+
+    @staticmethod
+    def compile_args(funcs):
+        """
+        Returns a list of __fargs__ and __fkwargs__ in a sequence of funcs.
 
         Parameters
         ----------
-        fargs: tuple.
-            Arguments of the function. Default to ().
-        desc: str:
-            Description of the run.
-        N: int.
-            Execute N times the functions. Default to None.
-        runs: int.
+        funcs : Sequence of functions
+
+        Raises
+        ------
+        Raises ValueError if funcs does not have __fargs__/__fkwargs__ attributes.
+        """
+
+        tmp = []
+        arg_set = []
+
+        for func in funcs:
+            if not hasattr(func, '__fargs__') or not hasattr(func, '__fkwargs__'):
+                raise ValueError("function must be decorated with 'parameter()'")
+            kw = (dict(zip(func.__fkwargs__, x)) for x in itertools.product(*func.__fkwargs__.values()))
+            tmp.append(list(itertools.product(func.__fargs__, kw)))
+
+        for item in itertools.chain.from_iterable(tmp):
+            if item not in arg_set:
+                arg_set.append(item)
+
+        return arg_set
+
+    @staticmethod
+    def is_configured(func, args, kwargs):
+        """Check if func has been configured with `parameters` to run with args/kwargs."""
+        # Check args
+        if args not in func.__fargs__:
+            return False
+
+        # Check kwargs
+        for key, value in kwargs.items():
+            if value not in func.__fkwargs__.get(key):
+                return False
+
+        return True
+
+    def run_parametric(self, N=None, runs=7):
+        """
+        Use __fargs__/__fkwargs__ defined with `parameter` decorator to make a parametric study.
+
+        Parameters
+        ----------
+        N: int, optional
+            Execute N times the functions. Default to None, that means N will be automatically set.
+        runs: int, optional
             Number of repeat. Default to 7. Must be at least 5.
         """
 
-        runs = 5 if runs < 5 else runs
-        outputs = []
-        times = []
+        arglist = self.compile_args(self.funcs)
+
+        for args, kwargs in arglist:
+            desc = str(args).replace('(', '').replace(')', '') + ', '
+            desc += ', '.join([f'{key}={value}' for key, value in kwargs.items()])
+            self.description.append(desc)
+            self._outputs = []
+            for func in self.funcs:
+                if self.is_configured(func, args, kwargs):
+                    self._run(func, fargs=args, fkwargs=kwargs, desc=desc, N=N, runs=runs)
+                else:
+                    self._update(func.__name__, [0], None, desc)
+
+    def run_single(self, fargs=(), fkwargs={}, desc='--', N=None, runs=7):
+        """
+        Run the comparison.
+
+        Parameters
+        ----------
+        fargs: tuple, optional
+            Arguments to pass to function.
+        kwargs: dict, optional
+            Keyword arguments to pass to func
+        desc: str, optional
+            Description of the run.
+        N: int, optional
+            Execute N times the functions. Default to None, that means N will be automatically set.
+        runs: int, optional
+            Number of repeat. Default to 7. Must be at least 5.
+        """
+
         self.description.append(str(desc))
+        self._outputs = []
 
         for func in self.funcs:
+            self._run(func, fargs=fargs, fkwargs=fkwargs, desc=desc, N=N, runs=runs)
 
-            with self.gc:
-                tmp = func(*fargs)
-            outputs.append(tmp)
 
-            if N is None:
-                for N in [10**i for i in range(0, 10)]:
-                    runtime = self.timeit(func=func, fargs=fargs, N=N)
-                    if runtime >= 0.2:
-                        times.append(runtime/N)
-                        break
+    def _run(self, func, fargs=(), fkwargs={}, desc='--', N=None, runs=7):
+        """Run the comparison. """
+        runs = 5 if runs < 5 else runs
+        times = []
 
-            # Correction : empty loop
-            te = self._passit(N=N)/N
+        self._outputs.append(func(*fargs, **fkwargs))
 
-            for _ in itertools.repeat(None, runs-1):
-                with self.gc:
-                    times.append(self.timeit(func=func, fargs=fargs, N=N)/N - te)
+        if N is None:
+            for N in [10**i for i in range(0, 10)]:
+                runtime = self.timeit(func=func, fargs=fargs, N=N)
+                if runtime >= 0.2:
+                    times.append(runtime/N)
+                    break
 
-            self._update(func.__name__, times, self.is_equal(outputs)[-1], desc)
+        # te allows to take into account the execution time of the context (empty loop)
+        te = self._passit(N=N)/N
+
+        for _ in itertools.repeat(None, runs-1):
+            with self._gc:
+                times.append(self.timeit(func=func, fargs=fargs, N=N)/N - te)
+
+        self._update(func.__name__, times, self._output, desc)
+
+    def _update(self, name, times, output, desc):
+        """Update (or create) Timing objects."""
+
+        _rtime = sum(times)/len(times)
+        _best = min(times)
+        _worst = max(times)
+        _std = np.std(times)
+        _output = output if output else 'NC.'
+
+        if self.results.get(name):
+            self.results[name].time.append(_rtime)
+            self.results[name].best.append(_best)
+            self.results[name].worst.append(_worst)
+            self.results[name].std.append(_std)
+            self.results[name].output.append(_output)
+            self.results[name].desc.append(desc)
+
+        else:
+            self.results[name] = Timing(name=name, time=[_rtime],
+                                        best=[_best], worst=[_worst], std=[_std],
+                                        output=[_output], desc=[str(desc)])
 
     @staticmethod
-    def timeit(func, fargs=(), N=1_000_000):
-        """ Timing method. """
+    def timeit(func, fargs=(), fkwargs={}, N=1_000_000):
+        """Timing method. """
 
         ti = time.perf_counter()
         for _ in itertools.repeat(None, N):
-            func(*fargs)
+            func(*fargs, *fkwargs)
         te = time.perf_counter()
         return te - ti
 
     @staticmethod
     def _passit(N=1_000_000):
-
+        """Empty timing."""
         ti = time.perf_counter()
         for _ in itertools.repeat(None, N):
             pass
         te = time.perf_counter()
         return te - ti
 
+    @property
+    def rcounter(self):
+        """Reference counter for output checking."""
+        self._rcounter += 1
+        return self._rcounter
+
+    @property
+    def _output(self):
+        """Format information about outputs."""
+        if len(self._outputs) == 1:
+            return f'R{self.rcounter}'
+
+        if self.is_equal(self._outputs)[-1]:
+            return f'==R{self._rcounter}'
+
+        return f'!=R{self._rcounter}'
 
     @staticmethod
     def is_equal(seq):
-        """ Check if all elements of seq are equal. """
-
+        """Check if all elements of seq are equal."""
         types = [type(obj) for obj in seq]
 
         if len(set(types)) > 1:
@@ -294,58 +452,49 @@ class Compare:
         return [x == seq[0] for x in seq]
 
     def reset(self):
-        """ Reset all results. """
+        """Reset all results."""
         self.results = dict()
         self.description = []
 
-    def display(self, order='by_description'):
-        """ Display results as table.
-
-        Parameter
-        ---------
-        order: str.
-            Order by function or description. Can be 'by_description' or 'by_function'.
-            Default to 'by_description'.
+    @staticmethod
+    def _autolabel(ax, rects):
         """
-        self.order = order
-        print(self)
+        Attach a text label above each bar in *rects*, displaying its height.
 
-    def _update(self, name, times, output, desc):
-
-        if self.results.get(name):
-            self.results[name].time.append(sum(times)/len(times))
-            self.results[name].best.append(min(times))
-            self.results[name].worst.append(max(times))
-            self.results[name].std.append(np.std(times))
-            self.results[name].output.append(output)
-            self.results[name].desc.append(desc)
-
-        else:
-            self.results[name] = Timing(name=name,
-                                        time=[sum(times)/len(times)],
-                                        best=[min(times)], worst=[max(times)], std=[np.std(times)],
-                                        output=[output], desc=[str(desc)])
+        Reference
+        ---------
+        Function from matplotlib documentation.
+        See https://matplotlib.org/gallery/api/barchart.html
+        """
+        for rect in rects:
+            height = rect.get_height()
+            ax.annotate('{:.2f}'.format(height),
+                        xy=(rect.get_x() + rect.get_width()/2, height),
+                        xytext=(0, 3),  # 3 points vertical offset
+                        textcoords="offset points",
+                        ha='center', va='bottom', fontsize=8)
 
     def _set_figure(self, fig, ax, xlabel, ylabel):
+        """Set some figure parameters."""
 
+        ax.set(xlabel=xlabel, ylabel=ylabel)
         ax.set_xticklabels(self.description, rotation=45)
-        ax.set_xlabel(xlabel)
-        ax.set_ylabel(ylabel)
         ax.legend()
         fig.tight_layout()
         plt.show()
 
     def plot(self, xlabel='Function arguments', log=False, relative=False):
-        """ Display results as plots.
+        """
+        Display results as plots.
 
         Parameters
         ----------
-        xlabel: str. Default to 'Function arguments'
-            Define xlabel.
-        log: bool. Default to False.
-            Plot in log scale.
-        relative: bool.
-            If True, displays relative results. Reference is the 1st function passed to instance.
+        xlabel: str, optional
+            Define xlabel. Default to 'Function arguments'.
+        log: bool. optional
+            Plot in log scale. Default to False.
+        relative: bool, optional
+            If True, displays relative results. Then, reference is the 1st function passed to instance.
         """
 
         plot = plt.semilogy if log else plt.plot
@@ -366,16 +515,10 @@ class Compare:
         self._set_figure(fig, ax, xlabel, ylabel)
 
     def bars(self, xlabel='Function arguments', log=False, relative=False):
-        """ Displays results as bar chart.
+        """
+        Display results as bar chart.
 
-        Parameters
-        ----------
-        xlabel: str. Default to 'Function arguments'
-            Define xlabel.
-        log: bool. Default to False.
-            Plot in log scale.
-        relative: bool.
-            If True, displays relative results. Reference is the 1st function passed to instance.
+        See help(Compare.plot) for more informations.
         """
 
         xlabel = str(xlabel)
@@ -403,63 +546,67 @@ class Compare:
 
         self._set_figure(fig, ax, xlabel, ylabel)
 
-    @staticmethod
-    def _autolabel(ax, rects):
+    def display(self, sort='by_description'):
         """
-        From matplotlib.org : Attach a text label above each bar in *rects*, displaying its height.
+        Display results as table.
+
+        Parameters
+        ----------
+        sort: {'by_description', 'by_function}, optional
+            Sort by function or description. Default to 'by_description'.
         """
-        for rect in rects:
-            height = rect.get_height()
-            ax.annotate('{:.2f}'.format(height),
-                        xy=(rect.get_x() + rect.get_width()/2, height),
-                        xytext=(0, 3),  # 3 points vertical offset
-                        textcoords="offset points",
-                        ha='center', va='bottom', fontsize=8)
+        self.sort = sort
+        print(self)
 
     @property
     def digits(self):
-        """ Returns number of digits to display. """
-        return 2 if self.unit == 'nsec' else 5
+        """Returns number of digits to display. """
+        return 1 if self.unit == 'nsec' else 2 if self.unit == 'usec' else 5
 
     def __str__(self):
+        """Display results as table."""
 
+        if self.sort not in ['by_function', 'by_description']:
+            raise ValueError("sort must be 'by_function' or 'by_description'")
+
+        # Define max width for some columns
         nd = len(self.description)
         nf = len(self.funcs)
         maxfc = max([len(key) for key in self.results] + [len(' Function ')])
         maxdc = max([len(desc) for desc in self.description] + [len(' Description ')])
 
+        # Define the templates
         rows = '| {fc:<{maxfc}} | {dc:^{maxdc}} | {rt:^14} | {std:^14} | {out:^5} |\n'
-        line = f"+{'':-<{maxfc+2}}+{'':-^{maxdc+2}}+{'':-^16}+{'':-^16}+{'':-^7}+\n"
+        hline = f"+{'':-<{maxfc+2}}+{'':-^{maxdc+2}}+{'':-^16}+{'':-^16}+{'':-^7}+\n"
 
-
-        table = line
-        table += rows.format(fc='Function', maxfc=maxfc,
-                             dc='Description', maxdc=maxdc,
-                             rt=f'Runtime [{self.unit}]',
-                             std=f'Std [{self.unit}]', out='Equal')
-        table += line
-
+        # Setup the results
         results = []
-
         for idx in range(nd):
             for fc, tg in self.results.items():
                 results.append(rows.format(fc=fc, maxfc=maxfc,
                                            dc=tg.desc[idx], maxdc=maxdc,
-                                           rt=round(tg.time[idx]/units[self.unit], self.digits),
-                                           std=round(tg.std[idx]/units[self.unit], self.digits),
-                                           out='True' if tg.output[idx] else False))
+                                           rt=round(tg.time[idx]/units[self.unit], self.digits) if tg.time[idx] != 0 else 'NC.',
+                                           std=round(tg.std[idx]/units[self.unit], self.digits) if tg.std[idx] != 0 else 'NC.',
+                                           out=tg.output[idx]))
 
-        if self.order == 'by_function':
+        if self.sort == 'by_function':
             results = list(itertools.chain.from_iterable([results[i::nf] for i in range(nf)]))
-            results = itertools.chain(*zip(*[results[i::nd] for i in range(nd)], [line]*nf))
-        elif self.order == 'by_description':
-            results = itertools.chain(*zip(*[results[i::nf] for i in range(nf)], [line]*nd))
-        else:
-            raise ValueError("order must be 'by_function' or 'by_description'")
+            results = itertools.chain(*zip(*[results[i::nd] for i in range(nd)], [hline]*nf))
+        elif self.sort == 'by_description':
+            results = itertools.chain(*zip(*[results[i::nf] for i in range(nf)], [hline]*nd))
+
+        # Start creating the table
+        table = hline
+        table += rows.format(fc='Function', maxfc=maxfc,
+                             dc='Description', maxdc=maxdc,
+                             rt=f'Runtime [{self.unit}]',
+                             std=f'Std [{self.unit}]', out='Equal')
+        table += hline
 
         return table + ''.join(results)
 
     def __repr__(self):
+        """Display results as table"""
         return self.__str__()
 
 
@@ -473,16 +620,18 @@ def mtimer(func=None, *, name=None):
 
     Parameters
     ----------
-    name: str
+    name: str, optional
         If provided, name is the key of the __bm__ dictionary where times are saved.
 
     Example
     -------
+
         @mtimer                      # Can be @mtimer(name='key')
         def instance_method(self):
             pass
     """
     def decorator(func):
+
         @functools.wraps(func)
         def wrapper(*args, **kwargs):
             nonlocal name
@@ -536,8 +685,8 @@ def format_mtimer(instance, table=True, unit='msec', precision=5, display=True):
         line = f"+{'':-^{kmax+2}}+{'':-^7}+{'':-^{tmax+2}}+{'':-^{tmax+2}}+\n"
         output += line
         output += tmp.format(key='Method', calls='Calls',
-                             atime=f'Avg. time ({unit})',
-                             rtime=f'Runtime ({unit})',
+                             atime=f'Avg. time [{unit}]',
+                             rtime=f'Runtime [{unit}]',
                              kmax=kmax, tmax=tmax)
         output += line
     else:
@@ -554,6 +703,6 @@ def format_mtimer(instance, table=True, unit='msec', precision=5, display=True):
 
     if display:
         print(output)
-        return
+        return None
 
     return output

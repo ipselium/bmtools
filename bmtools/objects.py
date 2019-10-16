@@ -48,7 +48,7 @@ class Timing:
     best: list
     worst: list
     std: list
-    output: bool
+    output: str
     desc: str
 
 

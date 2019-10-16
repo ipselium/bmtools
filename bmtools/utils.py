@@ -27,6 +27,7 @@ Utils for bmtools
 
 import math
 
+
 def kb_to_mb(kb):
     """ Convert kilobytes to megabytes. """
     return f'{kb/2**20:.2f} Mo'

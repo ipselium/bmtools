@@ -58,28 +58,69 @@ Benchmarking functions execution can be done with **`Compare`** class as follows
    if __name__ == "__main__":
 
        # Single comparison
-       bm1 = Compare(pow_op, star_op, sqrt_op, unit='ms')
-       bm1.run(fargs=(np.random.rand(1000000), ))
+       bm1 = Compare(pow_op, star_op, sqrt_op)
+       bm1.run_single(fargs=(np.random.rand(1000000), ))
        bm1.display()
 
        # Parametric comparison
        bm2 = Compare(pow_op, star_op, sqrt_op, unit='ms')
        for n in [2**n for n in range(16, 23)]:
-           bm2.run(fargs=(np.random.rand(n), ), desc=n)
+           bm2.run_single(fargs=(np.random.rand(n), ), desc=n)
 
        bm2.display()
        bm2.bars()
 
 .. code:: console
 
-   +------------+---------------+---------------+-------+
-   | Function   |  Description  | Runtime [ms]  | Equal |
-   +------------+---------------+---------------+-------+
-   | pow_op     |       -       |    2.12607    | True  |
-   | star_op    |       -       |    2.16648    | True  |
-   | sqrt_op    |       -       |    1.95636    | True  |
-   +------------+---------------+---------------+-------+
+   +------------+---------------+----------------+----------------+-------+
+   | Function   |  Description  | Runtime [msec] |   Std [msec]   | Equal |
+   +------------+---------------+----------------+----------------+-------+
+   | pow_op     |      --       |    1.56256     |    0.00798     |  R1   |
+   | star_op    |      --       |    1.55787     |    0.00752     | ==R1  |
+   | sqrt_op    |      --       |    1.58628     |    0.04214     | ==R1  |
+   +------------+---------------+----------------+----------------+-------+
 
+   (...)
+
+`Compare` provides three ways to display results:
+
+   * As a simple plot with the `Compare.plot()` method
+   * As a bar chart with the `Compare.bar()` method
+   * As a text table with the `Compare.display()` method
+
+
+`Compare` also provides the `parameters` decorator to specify a list of
+args/kwarg that have to be passed to a function for parametric study. The the
+`Compare.run_parametric` method performs the comparison:
+
+.. code-block:: python
+
+   from bmtools import Compare
+
+   @Compare.parameters((1, 2,), (2, 3, ), x=(1, 10))
+   def op1(a, b, x=1):
+       return a*x + b
+
+   @Compare.parameters((1, 2,), (2, 3,), x=(1, 10))
+   def op2(a, b, x=1):
+       return a*x + b
+
+   if __name__ == "__main__":
+       bm3 = Compare(op1, op2, unit='nsec')
+       bm3.run_parametric()
+       bm3.display()
+
+.. code:: console
+
+   +------------+---------------+----------------+----------------+-------+
+   | Function   |  Description  | Runtime [nsec] |   Std [nsec]   | Equal |
+   +------------+---------------+----------------+----------------+-------+
+   | op1        |   1, 2, x=1   |     359.8      |      12.0      |  R1   |
+   | op2        |   1, 2, x=1   |     354.5      |      8.4       | ==R1  |
+   +------------+---------------+----------------+----------------+-------+
+   | op1        |  1, 2, x=10   |     352.5      |      6.1       |  R2   |
+   | op2        |  1, 2, x=10   |     351.2      |      8.6       | ==R2  |
+   +------------+---------------+----------------+----------------+-------+
 
 Time instance methods
 ---------------------
@@ -148,15 +189,15 @@ class is largely inspired by Bench-it.
 .. code:: console
 
 
-   +-------------------------------------------------------------------------------------------------+
-   |                                           TimeProbes                                            |
-   + ---------- + ------------------------ + ---------- + ------------- + ------------- + ---------- +
-   | Makers     |        File:line         |  Function  | Avg time [s]  |  Runtime [s]  |  Percent   |
-   + ---------- + ------------------------ + ---------- + ------------- + ------------- + ---------- +
-   | example    | test_probes_simple.py:33 |  <module>  |    0.1436     |    0.1436     |    12.5    |
-   | Probe 1    | test_probes_simple.py:35 |  <module>  |    0.20101    |    0.20101    |    17.5    |
-   | my_context | test_probes_simple.py:37 |  <module>  |    0.80113    |    0.80113    |    69.9    |
-   + ---------- + ------------------------ + ---------- + ------------- + ------------- + ---------- +
+   +-------------------------------------------------------------------------------------------------------+
+   |                                              TimeProbes                                               |
+   + ---------- + ------------------------ + ---------- + ---------------- + ---------------- + ---------- +
+   | Makers     |        File:line         |  Function  | Avg time [msec]  |  Runtime [msec]  |  Percent   |
+   + ---------- + ------------------------ + ---------- + ---------------- + ---------------- + ---------- +
+   | example    | test_probes_simple.py:33 |     --     |    167.75452     |    167.75452     |  14334.3   |
+   | Probe 1    | test_probes_simple.py:35 |     --     |    201.12324     |    201.12324     |  17185.6   |
+   | my_context | test_probes_simple.py:37 |     --     |    800.91822     |    800.91822     |  68436.9   |
+   + ---------- + ------------------------ + ---------- + ---------------- + ---------------- + ---------- +
 
 
 References
