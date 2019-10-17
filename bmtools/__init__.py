@@ -29,4 +29,4 @@ bmtools
 from .bmtools import Compare, TimeProbes, mtimer, format_mtimer
 
 __all__ = ["Compare", "TimeProbes", "mtimer", "format_mtimer"]
-__version__ = "0.2.1"
+__version__ = "0.3.0"
