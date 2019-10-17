@@ -82,7 +82,7 @@ Benchmarking functions execution can be done with **`Compare`** class as follows
 
    (...)
 
-`Compare` provides three ways to display results:
+<code>Compare</code> provides three ways to display results:
 
    * As a simple plot with the `Compare.plot()` method
    * As a bar chart with the `Compare.bar()` method
@@ -90,7 +90,7 @@ Benchmarking functions execution can be done with **`Compare`** class as follows
 
 
 `Compare` also provides the `parameters` decorator to specify a list of
-args/kwarg that have to be passed to a function for parametric study. The the
+args/kwarg that have to be passed to a function for parametric study. The
 `Compare.run_parametric` method performs the comparison:
 
 .. code-block:: python

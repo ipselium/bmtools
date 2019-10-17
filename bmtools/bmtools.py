@@ -32,12 +32,13 @@ Benchmarking tools
 
 import os
 import time
+import timeit
 import inspect
 import functools
 import itertools
 import numpy as np
 import matplotlib.pyplot as plt
-from bmtools.objects import Timing, Probe, GarbageCollector, Singleton
+from bmtools.objects import Timing, Probe, Singleton
 
 
 __all__ = ["Compare", "TimeProbes", "mtimer", "format_mtimer"]
@@ -224,8 +225,8 @@ class Compare:
         self.results = dict()
         self.unit = unit if unit in units.keys() else 'msec'
         self.sort = 'by_description'
+        self.hide_nc = True
         self.description = []
-        self._gc = GarbageCollector()
         self._outputs = []
         self._rcounter = 0
 
@@ -236,6 +237,11 @@ class Compare:
 
         This decorator prepares functions for future execution with
         `parametric` method passing fargs/fkwargs to the decorated function
+
+        Be aware that decorating a function with Compare.parameters can adds a
+        small overhead (several nsec). This is generally not critical, except
+        when evaluating the execution time of very fast functions (about ten
+        nsec), in particular when this function does not take input arguments.
 
         Example
         -------
@@ -257,10 +263,17 @@ class Compare:
             func.__fkwargs__ = fkwargs
 
             @functools.wraps(func)
-            def wrapper(*args, **kwargs):
+            def both(*args, **kwargs):
                 return func(*args, **kwargs)
 
-            return wrapper
+            @functools.wraps(func)
+            def none():
+                return func()
+
+            if fargs or fkwargs:
+                return both
+
+            return none
 
         return decorator
 
@@ -283,31 +296,56 @@ class Compare:
 
         for func in funcs:
             if not hasattr(func, '__fargs__') or not hasattr(func, '__fkwargs__'):
-                raise ValueError("function must be decorated with 'parameter()'")
+                raise ValueError(f"function '{func.__name__}' must be decorated with 'parameter()'")
             kw = (dict(zip(func.__fkwargs__, x)) for x in itertools.product(*func.__fkwargs__.values()))
-            tmp.append(list(itertools.product(func.__fargs__, kw)))
+            if func.__fargs__:
+                tmp.append(list(itertools.product(func.__fargs__, kw)))
+            else:
+                tmp.append(list(itertools.product((tuple(), ), kw)))
 
         for item in itertools.chain.from_iterable(tmp):
             if item not in arg_set:
                 arg_set.append(item)
+
+        # Handle no args/kwargs case
+        if tmp.count([]) > 0:
+            arg_set.insert(0, [tuple(), dict()])
 
         return arg_set
 
     @staticmethod
     def is_configured(func, args, kwargs):
         """Check if func has been configured with `parameters` to run with args/kwargs."""
+
+        flag_arg = True
+        flag_kwarg = True
+
         # Check args
         if args not in func.__fargs__:
-            return False
+            flag_arg = False
 
         # Check kwargs
-        for key, value in kwargs.items():
-            if value not in func.__fkwargs__.get(key):
-                return False
+        if kwargs:
+            for key, value in kwargs.items():
+                if value not in func.__fkwargs__.get(key, ['__none__']):
+                    flag_kwarg = False
+        elif not kwargs and  func.__fkwargs__:
+            flag_kwarg = False
 
-        return True
+        # Particular cases:
+        if args == func.__fargs__:
+            flag_arg = True
 
-    def run_parametric(self, N=None, runs=7):
+        return True if flag_arg and flag_kwarg else False
+
+    @staticmethod
+    def _make_description(args, kwargs, sep=', '):
+        """Format run description. """
+        desc = str(args)[1:-1] + ' ' if args else '()' + sep
+        desc += sep.join([f'{key}={value}' for key, value in kwargs.items()]) if kwargs else '{}'
+        return desc
+
+    def run_parametric(self, N=None, runs=7, display=False):
         """
         Use __fargs__/__fkwargs__ defined with `parameter` decorator to make a parametric study.
 
@@ -322,8 +360,7 @@ class Compare:
         arglist = self.compile_args(self.funcs)
 
         for args, kwargs in arglist:
-            desc = str(args).replace('(', '').replace(')', '') + ', '
-            desc += ', '.join([f'{key}={value}' for key, value in kwargs.items()])
+            desc = self._make_description(args, kwargs)
             self.description.append(desc)
             self._outputs = []
             for func in self.funcs:
@@ -332,7 +369,10 @@ class Compare:
                 else:
                     self._update(func.__name__, [0], None, desc)
 
-    def run_single(self, fargs=(), fkwargs={}, desc='--', N=None, runs=7):
+        if display:
+            self.display()
+
+    def run_single(self, fargs=(), fkwargs={}, desc='--', N=None, runs=7, display=False):
         """
         Run the comparison.
 
@@ -356,28 +396,23 @@ class Compare:
         for func in self.funcs:
             self._run(func, fargs=fargs, fkwargs=fkwargs, desc=desc, N=N, runs=runs)
 
+        if display:
+            self.display()
 
     def _run(self, func, fargs=(), fkwargs={}, desc='--', N=None, runs=7):
-        """Run the comparison. """
-        runs = 5 if runs < 5 else runs
-        times = []
+        """Run the comparison. Wrap timeit to work with functions."""
 
         self._outputs.append(func(*fargs, **fkwargs))
 
-        if N is None:
-            for N in [10**i for i in range(0, 10)]:
-                runtime = self.timeit(func=func, fargs=fargs, N=N)
-                if runtime >= 0.2:
-                    times.append(runtime/N)
-                    break
+        partial = functools.partial(func, *fargs, **fkwargs)
 
-        # te allows to take into account the execution time of the context (empty loop)
-        te = self._passit(N=N)/N
+        timer = timeit.Timer(partial)
+        runs = 5 if runs < 5 else runs
+        if not N:
+            N, _ = timer.autorange()
 
-        for _ in itertools.repeat(None, runs-1):
-            with self._gc:
-                times.append(self.timeit(func=func, fargs=fargs, N=N)/N - te)
-
+        times = timer.repeat(repeat=runs, number=N)
+        times = [time/N for time in times]
         self._update(func.__name__, times, self._output, desc)
 
     def _update(self, name, times, output, desc):
@@ -401,25 +436,6 @@ class Compare:
             self.results[name] = Timing(name=name, time=[_rtime],
                                         best=[_best], worst=[_worst], std=[_std],
                                         output=[_output], desc=[str(desc)])
-
-    @staticmethod
-    def timeit(func, fargs=(), fkwargs={}, N=1_000_000):
-        """Timing method. """
-
-        ti = time.perf_counter()
-        for _ in itertools.repeat(None, N):
-            func(*fargs, *fkwargs)
-        te = time.perf_counter()
-        return te - ti
-
-    @staticmethod
-    def _passit(N=1_000_000):
-        """Empty timing."""
-        ti = time.perf_counter()
-        for _ in itertools.repeat(None, N):
-            pass
-        te = time.perf_counter()
-        return te - ti
 
     @property
     def rcounter(self):
@@ -546,7 +562,7 @@ class Compare:
 
         self._set_figure(fig, ax, xlabel, ylabel)
 
-    def display(self, sort='by_description'):
+    def display(self, sort='by_description', hide_nc=True):
         """
         Display results as table.
 
@@ -556,12 +572,13 @@ class Compare:
             Sort by function or description. Default to 'by_description'.
         """
         self.sort = sort
+        self.hide_nc = hide_nc
         print(self)
 
     @property
     def digits(self):
         """Returns number of digits to display. """
-        return 1 if self.unit == 'nsec' else 2 if self.unit == 'usec' else 5
+        return 1 if self.unit == 'nsec' else 2 if self.unit in ['usec', 'msec'] else 4
 
     def __str__(self):
         """Display results as table."""
@@ -585,7 +602,7 @@ class Compare:
             for fc, tg in self.results.items():
                 results.append(rows.format(fc=fc, maxfc=maxfc,
                                            dc=tg.desc[idx], maxdc=maxdc,
-                                           rt=round(tg.time[idx]/units[self.unit], self.digits) if tg.time[idx] != 0 else 'NC.',
+                                           rt=round(tg.best[idx]/units[self.unit], self.digits) if tg.best[idx] != 0 else 'NC.',
                                            std=round(tg.std[idx]/units[self.unit], self.digits) if tg.std[idx] != 0 else 'NC.',
                                            out=tg.output[idx]))
 
@@ -594,6 +611,9 @@ class Compare:
             results = itertools.chain(*zip(*[results[i::nd] for i in range(nd)], [hline]*nf))
         elif self.sort == 'by_description':
             results = itertools.chain(*zip(*[results[i::nf] for i in range(nf)], [hline]*nd))
+
+        if self.hide_nc:
+            results = [line for line in results if 'NC.' not in line]
 
         # Start creating the table
         table = hline
