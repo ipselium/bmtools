@@ -341,7 +341,11 @@ class Compare:
     @staticmethod
     def _make_description(args, kwargs, sep=', '):
         """Format run description. """
-        desc = str(args)[1:-1] + ' ' if args else '()' + sep
+        if not args:
+            desc = '()' + sep
+        else:
+            args = str(args)[1:-1]
+            desc = args + sep if not args.endswith(',') else args + ' '
         desc += sep.join([f'{key}={value}' for key, value in kwargs.items()]) if kwargs else '{}'
         return desc
 

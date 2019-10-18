@@ -82,16 +82,16 @@ Benchmarking functions execution can be done with **`Compare`** class as follows
 
    (...)
 
-<code>Compare</code> provides three ways to display results:
+**`Compare`** provides three ways to display results:
 
-   * As a simple plot with the `Compare.plot()` method
-   * As a bar chart with the `Compare.bar()` method
-   * As a text table with the `Compare.display()` method
+   * As a simple plot with the **`Compare.plot()`** method
+   * As a bar chart with the **`Compare.bar()`** method
+   * As a text table with the **`Compare.display()`** method
 
 
-`Compare` also provides the `parameters` decorator to specify a list of
+**`Compare`** also provides the **`parameters`** decorator to specify a list of
 args/kwarg that have to be passed to a function for parametric study. The
-`Compare.run_parametric` method performs the comparison:
+**`Compare.run_parametric`** method performs the comparison:
 
 .. code-block:: python
 
@@ -115,12 +115,19 @@ args/kwarg that have to be passed to a function for parametric study. The
    +------------+---------------+----------------+----------------+-------+
    | Function   |  Description  | Runtime [nsec] |   Std [nsec]   | Equal |
    +------------+---------------+----------------+----------------+-------+
-   | op1        |   1, 2, x=1   |     359.8      |      12.0      |  R1   |
-   | op2        |   1, 2, x=1   |     354.5      |      8.4       | ==R1  |
+   | op1        |   1, 2, x=1   |     398.0      |      22.3      |  R1   |
+   | op2        |   1, 2, x=1   |     410.1      |      10.4      | ==R1  |
    +------------+---------------+----------------+----------------+-------+
-   | op1        |  1, 2, x=10   |     352.5      |      6.1       |  R2   |
-   | op2        |  1, 2, x=10   |     351.2      |      8.6       | ==R2  |
+   | op1        |  1, 2, x=10   |     408.5      |      13.7      |  R2   |
+   | op2        |  1, 2, x=10   |     408.2      |      10.7      | ==R2  |
    +------------+---------------+----------------+----------------+-------+
+   | op1        |   2, 3, x=1   |     399.4      |      8.2       |  R3   |
+   | op2        |   2, 3, x=1   |     401.5      |      3.8       | ==R3  |
+   +------------+---------------+----------------+----------------+-------+
+   | op1        |  2, 3, x=10   |     392.0      |      17.6      |  R4   |
+   | op2        |  2, 3, x=10   |     399.1      |      11.5      | ==R4  |
+   +------------+---------------+----------------+----------------+-------+
+
 
 Time instance methods
 ---------------------
@@ -169,7 +176,7 @@ The **`mtimer`** decorator can be used to time instance methods as follows:
 Add time probes to your code
 ----------------------------
 
-The **`TimeProbes`** class provide a way to time blocks of code. Note that this
+The **`TimeProbes`** class provides a way to time blocks of code. Note that this
 class is largely inspired by Bench-it.
 
 .. code-block:: python
