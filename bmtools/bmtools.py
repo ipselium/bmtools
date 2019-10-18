@@ -19,15 +19,25 @@
 # along with bmtools. If not, see <http://www.gnu.org/licenses/>.
 #
 # Creation Date : 2019-10-10 - 12:07:48
-# pylint: disable=dangerous-default-value
-# pylint: disable=redefined-argument-from-local
 # pylint: disable=line-too-long
 # pylint: disable=attribute-defined-outside-init
 # pylint: disable=unused-argument
 """
------------
+------------------
 Benchmarking tools
------------
+------------------
+
+
+Classes:
+
+    TimeProbes
+    Compare
+
+Functions:
+
+    mtimer(method, name)
+    format_mtimer(instance)
+
 """
 
 import os
@@ -172,6 +182,7 @@ class TimeProbes(metaclass=Singleton):
         return self.__str__()
 
     def __str__(self):
+        """Format the results in a table. """
 
         ttime = time.perf_counter() - self._itime
         maxmk = max([len(p.name) for p in self._probes.values()] + [len(' Makers ')])
@@ -236,7 +247,8 @@ class Compare:
         Decorator giving a function the __fargs__ and __fkwargs__ attributes.
 
         This decorator prepares functions for future execution with
-        `parametric` method passing fargs/fkwargs to the decorated function
+        `run_parametric` method passing a combination of fargs/fkwargs to the
+        decorated function
 
         Be aware that decorating a function with Compare.parameters can adds a
         small overhead (several nsec). This is generally not critical, except
@@ -246,12 +258,12 @@ class Compare:
         Example
         -------
 
-        @Compare.parameters((1,), (2,), b=(3, 4))
-        def multiplication(a, b=1):
-            return a*b
+            @Compare.parameters((1,), (2,), b=(3, 4))
+            def multiplication(a, b=1):
+                return a*b
 
-        This decorator prepares function to be executed with the following
-        combination of args/kwargs:
+        This decorator prepares `multiplication` to be executed with the following
+        combinations of args/kwargs:
             - args=(1, ) and kwargs={'b':3}
             - args=(1, ) and kwargs={'b':4}
             - args=(2, ) and kwargs={'b':3}
@@ -280,15 +292,20 @@ class Compare:
     @staticmethod
     def compile_args(funcs):
         """
-        Returns a list of __fargs__ and __fkwargs__ in a sequence of funcs.
+        Return a list of possible combinations of args and kwargs from the __fargs__
+        and __fkwargs__ attributes of a sequence of functions `funcs`. All the
+        functions in this sequence must have been decorated with
+        `Compare.parameters`.
 
         Parameters
         ----------
-        funcs : Sequence of functions
+        funcs : list or tuple
+            Sequence of functions
 
         Raises
         ------
-        Raises ValueError if funcs does not have __fargs__/__fkwargs__ attributes.
+        Raises ValueError if at least one of the functions in `funcs` does not
+        have __fargs__/__fkwargs__ attributes.
         """
 
         tmp = []
@@ -315,7 +332,7 @@ class Compare:
 
     @staticmethod
     def is_configured(func, args, kwargs):
-        """Check if func has been configured with `parameters` to run with args/kwargs."""
+        """Check if func has been configured (with `parameters`) to run with args/kwargs."""
 
         flag_arg = True
         flag_kwarg = True
@@ -332,7 +349,7 @@ class Compare:
         elif not kwargs and  func.__fkwargs__:
             flag_kwarg = False
 
-        # Particular cases:
+        # Particular cases: no args
         if args == func.__fargs__:
             flag_arg = True
 
@@ -376,23 +393,35 @@ class Compare:
         if display:
             self.display()
 
-    def run_single(self, fargs=(), fkwargs={}, desc='--', N=None, runs=7, display=False):
+    def run_single(self, fargs=None, fkwargs=None, desc='--', N=None, runs=7, display=False):
         """
-        Run the comparison.
+        Compare execution time and outputs of the functions in `funcs`.
+
+        They are all executed with the same args and kwargs defined as by the
+        `fargs` and `fkwargs` arguments passed to this method.
+
+        The execution time is measured using `Timer` class from the standard `timeit` module.
+        See `timeit` doc for more informations on the timing procedure.
 
         Parameters
         ----------
         fargs: tuple, optional
-            Arguments to pass to function.
+            Arguments to pass to function. Default to None.
         kwargs: dict, optional
-            Keyword arguments to pass to func
+            Keyword arguments to pass to func. Default to None.
         desc: str, optional
-            Description of the run.
+            Description of the run. Default to '--'.
         N: int, optional
             Execute N times the functions. Default to None, that means N will be automatically set.
         runs: int, optional
             Number of repeat. Default to 7. Must be at least 5.
         """
+
+        if not fargs:
+            fargs = tuple()
+
+        if not fkwargs:
+            fkwargs = dict()
 
         self.description.append(str(desc))
         self._outputs = []
@@ -403,7 +432,7 @@ class Compare:
         if display:
             self.display()
 
-    def _run(self, func, fargs=(), fkwargs={}, desc='--', N=None, runs=7):
+    def _run(self, func, fargs, fkwargs, desc='--', N=None, runs=7):
         """Run the comparison. Wrap timeit to work with functions."""
 
         self._outputs.append(func(*fargs, **fkwargs))
@@ -630,41 +659,44 @@ class Compare:
         return table + ''.join(results)
 
     def __repr__(self):
-        """Display results as table"""
+        """Display results in a table"""
         return self.__str__()
 
 
-def mtimer(func=None, *, name=None):
-    """ Measure execution time of instance methods.
+def mtimer(method=None, *, name=None):
+    """ Measure execution time of instance methods of a class.
 
     Create a __bm__ instance attribute that refers to a dictionary containing
-    execution times of instance methods.
+    execution times of the decorated instance methods.
 
     Note that static or class method cannot be timed with this decorator.
 
     Parameters
     ----------
     name: str, optional
-        If provided, name is the key of the __bm__ dictionary where times are saved.
+        If provided, name is the key of the __bm__ dictionary where times are
+        saved for the current method. If not provided, name is method.__name__.
 
     Example
     -------
 
-        @mtimer                      # Can be @mtimer(name='key')
-        def instance_method(self):
-            pass
-    """
-    def decorator(func):
+        class Example:
 
-        @functools.wraps(func)
+            @mtimer                      # Can be @mtimer(name='key')
+            def instance_method(self):
+                pass
+    """
+    def decorator(method):
+
+        @functools.wraps(method)
         def wrapper(*args, **kwargs):
             nonlocal name
             if not name:
-                name = func.__name__
+                name = method.__name__
             if not hasattr(args[0], '__bm__'):
                 args[0].__bm__ = dict()
             start = time.perf_counter()
-            output = func(*args, **kwargs)
+            output = method(*args, **kwargs)
             if args[0].__bm__.get(name):
                 args[0].__bm__[name].append(time.perf_counter() - start)
             else:
@@ -672,8 +704,8 @@ def mtimer(func=None, *, name=None):
             return output
         return wrapper
 
-    if func:
-        return decorator(func)
+    if method:
+        return decorator(method)
 
     return decorator
 
